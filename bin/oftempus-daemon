@@ -1,0 +1,119 @@
+#!/bin/zsh
+# oftempus-daemon — mirror the OmniFocus selection into Tempus time entries.
+#
+# Selecting a task starts a running time entry in Tempus (Toggl v9 API) with
+# client = the project's folder, project = the OmniFocus project, description =
+# the task title. Changing/losing the selection (or quitting OmniFocus) stops it.
+# Clients and projects are created in Tempus on first use.
+#
+# Long-running: launchd keeps it alive. OFTEMPUS_DRY_RUN=1 prints start/stop
+# decisions instead of calling the API.
+set -u
+
+CONF_DIR="$HOME/.config/oftempus"
+CONF="$CONF_DIR/config.json"
+LOG="$CONF_DIR/daemon.log"
+POLL=3          # seconds between selection polls
+DEBOUNCE=2      # consecutive identical polls required before starting
+
+command -v jq >/dev/null || { echo "oftempus: jq is required" >&2; exit 1; }
+[[ -f "$CONF" ]] || { echo "oftempus: missing $CONF" >&2; exit 1; }
+
+BASE=$(jq -r '.tempus_base_url' "$CONF"); BASE=${BASE%/}
+WORKSPACE=$(jq -r '.workspace // "Mon Workspace"' "$CONF")
+TOKEN=$(security find-generic-password -s oftempus-token -w 2>/dev/null) || TOKEN=""
+[[ -n "$TOKEN" || -n "${OFTEMPUS_DRY_RUN:-}" ]] || { echo "oftempus: no API token in Keychain (service oftempus-token)" >&2; exit 1; }
+
+log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
+api() { # api <method> <path> [json-body]
+  local m=$1 p=$2 b=${3:-}
+  if [[ -n "$b" ]]; then
+    curl -sf --max-time 5 -X "$m" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d "$b" "$BASE/api/v9$p"
+  else
+    curl -sf --max-time 5 -X "$m" -H "Authorization: Bearer ${TOKEN}" "$BASE/api/v9$p"
+  fi
+}
+
+WID=""
+ensure_wid() {
+  [[ -n "$WID" ]] && return 0
+  WID=$(api GET /workspaces | jq -r --arg n "$WORKSPACE" 'map(select(.name == $n)) | first // .[0] | .id // empty' 2>/dev/null)
+  [[ -n "$WID" ]]
+}
+
+# ensure_project <client> <project> -> echoes project id ('' when unresolvable)
+ensure_project() {
+  local client=$1 project=$2 cid pid
+  cid=""
+  if [[ -n "$client" ]]; then
+    cid=$(api GET "/workspaces/$WID/clients" | jq -r --arg n "$client" 'map(select(.name == $n)) | first | .id // empty' 2>/dev/null)
+    [[ -z "$cid" ]] && cid=$(api POST "/workspaces/$WID/clients" "$(jq -nc --arg n "$client" '{name: $n}')" | jq -r '.id // empty' 2>/dev/null)
+  fi
+  pid=$(api GET "/workspaces/$WID/projects" | jq -r --arg n "$project" --arg c "$cid" \
+    'map(select(.name == $n and ((.client_id // "" | tostring) == $c or $c == ""))) | first | .id // empty' 2>/dev/null)
+  if [[ -z "$pid" ]]; then
+    local body
+    if [[ -n "$cid" ]]; then body=$(jq -nc --arg n "$project" --argjson c "$cid" '{name: $n, client_id: $c, active: true}')
+    else body=$(jq -nc --arg n "$project" '{name: $n, active: true}'); fi
+    pid=$(api POST "/workspaces/$WID/projects" "$body" | jq -r '.id // empty' 2>/dev/null)
+  fi
+  echo "$pid"
+}
+
+CUR_TASK=""     # OmniFocus task id currently tracked
+CUR_ENTRY=""    # Tempus time entry id
+PENDING=""; PENDING_N=0
+
+start_entry() { # <taskJson>
+  local name project client pid body
+  name=$(printf '%s\n' "$1" | jq -r '.name')
+  project=$(printf '%s\n' "$1" | jq -r '.project')
+  client=$(printf '%s\n' "$1" | jq -r '.client')
+  if [[ -n "${OFTEMPUS_DRY_RUN:-}" ]]; then
+    echo "DRY-RUN start: [$client / $project] $name"; CUR_ENTRY="dry"; return 0
+  fi
+  ensure_wid || { log "ERR no workspace"; return 1; }
+  pid=$(ensure_project "$client" "$project")
+  body=$(jq -nc --arg d "$name" --argjson w "$WID" \
+    '{description: $d, workspace_id: $w, duration: -1, start: (now | todate), created_with: "of-tempus"}')
+  [[ -n "$pid" ]] && body=$(printf '%s\n' "$body" | jq -c --argjson p "$pid" '. + {project_id: $p}')
+  CUR_ENTRY=$(api POST "/workspaces/$WID/time_entries" "$body" | jq -r '.id // empty' 2>/dev/null)
+  [[ -n "$CUR_ENTRY" ]] && log "START [$client / $project] $name (entry $CUR_ENTRY)" || log "ERR start failed: $name"
+}
+
+stop_entry() {
+  [[ -n "$CUR_ENTRY" ]] || return 0
+  if [[ -n "${OFTEMPUS_DRY_RUN:-}" ]]; then
+    echo "DRY-RUN stop"; CUR_ENTRY=""; return 0
+  fi
+  api PATCH "/workspaces/$WID/time_entries/$CUR_ENTRY/stop" >/dev/null 2>&1 && log "STOP entry $CUR_ENTRY" || log "ERR stop failed: $CUR_ENTRY"
+  CUR_ENTRY=""
+}
+
+trap 'stop_entry; exit 0' INT TERM
+
+while true; do
+  SEL=$(/usr/bin/osascript "$HOME/bin/oftempus-selection.applescript" 2>/dev/null) || SEL="NONE"
+  if [[ "$SEL" == "NONE" || -z "$SEL" ]]; then
+    TASK=""
+  else
+    TASK=$(printf '%s\n' "$SEL" | jq -r '.id // empty' 2>/dev/null)
+  fi
+
+  if [[ "$TASK" != "$CUR_TASK" ]]; then
+    # debounce: require the new selection to be stable across DEBOUNCE polls
+    if [[ "$TASK" == "$PENDING" ]]; then
+      (( PENDING_N++ ))
+    else
+      PENDING="$TASK"; PENDING_N=1
+    fi
+    if (( PENDING_N >= DEBOUNCE )); then
+      stop_entry
+      CUR_TASK="$TASK"
+      [[ -n "$TASK" ]] && start_entry "$SEL"
+    fi
+  else
+    PENDING="$TASK"; PENDING_N=0
+  fi
+  sleep $POLL
+done

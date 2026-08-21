@@ -39,3 +39,22 @@ if [[ "$code" == "200" ]]; then
 else
   echo "⚠️ Tempus a répondu HTTP $code — vérifie l'URL et le token." >&2; exit 1
 fi
+
+# Install the OmniFocus plug-in (manual start/stop button, also useful on iOS —
+# see README). Repo layout: bin/../plugin ; brew layout: libexec/../plugin.
+SCRIPT_DIR="${0:A:h}"
+PLUGIN="$SCRIPT_DIR/../plugin/Tempus.omnifocusjs"
+if [[ -f "$PLUGIN" ]]; then
+  installed=""
+  for c in com.omnigroup.OmniFocus4 com.omnigroup.OmniFocus4.MacAppStore com.omnigroup.OmniFocus3; do
+    d="$HOME/Library/Containers/$c/Data/Library/Application Support/Plug-Ins"
+    if [[ -d "${d:h}" ]]; then
+      mkdir -p "$d" && cp "$PLUGIN" "$d/" && installed="$d"; break
+    fi
+  done
+  if [[ -n "$installed" ]]; then
+    echo "✅ Plug-in OmniFocus installé (menu Automation → Tempus)."
+  else
+    echo "→ OmniFocus introuvable — plug-in non installé (relance oftempus-setup après son installation)."
+  fi
+fi

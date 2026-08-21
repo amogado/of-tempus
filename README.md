@@ -25,17 +25,27 @@ The timer follows the **selection only**: it keeps running while you work on the
 
 ## Install
 
+### Homebrew (recommended)
+
+```zsh
+brew install amogado/tap/of-tempus
+oftempus-setup                     # asks for your Tempus URL, workspace and API token
+brew services start of-tempus      # runs the daemon, restarts at login
+```
+
+### Manual
+
 ```zsh
 git clone https://github.com/amogado/of-tempus.git
 cd of-tempus
 ./install.sh
 ```
 
-Requires [jq](https://jqlang.github.io/jq/) (`brew install jq`). On first run, macOS will ask permission to control OmniFocus (Automation) — accept it.
+Requires [jq](https://jqlang.github.io/jq/) (`brew install jq` — automatic with the Homebrew install). On first run, macOS will ask permission to control OmniFocus (Automation) — accept it.
 
 ## Configuration
 
-`~/.config/oftempus/config.json`:
+`oftempus-setup` does all of this for you. Manually: `~/.config/oftempus/config.json`:
 
 ```json
 {

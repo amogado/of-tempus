@@ -1,0 +1,41 @@
+#!/bin/zsh
+# oftempus-setup — one-shot per-machine configuration.
+# Prompts for the Tempus URL, workspace and API token; writes the config file
+# and stores the token in the macOS Keychain (never on disk).
+set -eu
+
+CONF_DIR="$HOME/.config/oftempus"
+CONF="$CONF_DIR/config.json"
+mkdir -p "$CONF_DIR"
+
+cur_url=""; cur_ws=""
+if [[ -f "$CONF" ]]; then
+  cur_url=$(jq -r '.tempus_base_url // ""' "$CONF" 2>/dev/null) || true
+  cur_ws=$(jq -r '.workspace // ""' "$CONF" 2>/dev/null) || true
+fi
+
+printf "URL de l'instance Tempus%s : " "${cur_url:+ [$cur_url]}"
+read -r url; url=${url:-$cur_url}
+[[ -n "$url" ]] || { echo "URL requise." >&2; exit 1; }
+
+printf "Nom du workspace%s : " "${cur_ws:+ [$cur_ws]}"
+read -r ws; ws=${ws:-$cur_ws}
+[[ -n "$ws" ]] || { echo "Workspace requis." >&2; exit 1; }
+
+printf "Token API (saisie masquée, vide = garder l'existant) : "
+read -rs token; echo
+if [[ -n "$token" ]]; then
+  security add-generic-password -a oftempus -s oftempus-token -w "$token" -U
+elif ! security find-generic-password -s oftempus-token -w >/dev/null 2>&1; then
+  echo "Aucun token existant dans le Trousseau — il en faut un." >&2; exit 1
+fi
+
+jq -n --arg u "${url%/}" --arg w "$ws" '{tempus_base_url: $u, workspace: $w}' > "$CONF"
+
+TOKEN=$(security find-generic-password -s oftempus-token -w)
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -H "Authorization: Bearer ${TOKEN}" "${url%/}/api/v9/me" || echo 000)
+if [[ "$code" == "200" ]]; then
+  echo "✅ Connexion Tempus OK. Lance le suivi avec : brew services start of-tempus"
+else
+  echo "⚠️ Tempus a répondu HTTP $code — vérifie l'URL et le token." >&2; exit 1
+fi

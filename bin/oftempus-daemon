@@ -10,6 +10,7 @@
 # decisions instead of calling the API.
 set -u
 
+SCRIPT_DIR="${0:A:h}"
 CONF_DIR="$HOME/.config/oftempus"
 CONF="$CONF_DIR/config.json"
 LOG="$CONF_DIR/daemon.log"
@@ -93,7 +94,7 @@ stop_entry() {
 trap 'stop_entry; exit 0' INT TERM
 
 while true; do
-  SEL=$(/usr/bin/osascript "$HOME/bin/oftempus-selection.applescript" 2>/dev/null) || SEL="NONE"
+  SEL=$(/usr/bin/osascript "$SCRIPT_DIR/oftempus-selection.applescript" 2>/dev/null) || SEL="NONE"
   if [[ "$SEL" == "NONE" || -z "$SEL" ]]; then
     TASK=""
   else

@@ -1,0 +1,15 @@
+{
+	"identifier": "com.amogado.of-tempus",
+	"author": "amogado",
+	"description": "Time tracking into Tempus (Toggl v9-compatible) from OmniFocus.",
+	"version": "0.3",
+	"defaultLocale": "en",
+	"actions": [
+		{ "identifier": "start", "image": "play.fill" },
+		{ "identifier": "stop", "image": "stop.fill" },
+		{ "identifier": "configure", "image": "gear" }
+	],
+	"libraries": [
+		{ "identifier": "tempusLib" }
+	]
+}

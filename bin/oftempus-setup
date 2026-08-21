@@ -44,12 +44,12 @@ fi
 # see README). Repo layout: bin/../plugin ; brew layout: libexec/../plugin.
 SCRIPT_DIR="${0:A:h}"
 PLUGIN="$SCRIPT_DIR/../plugin/Tempus.omnifocusjs"
-if [[ -f "$PLUGIN" ]]; then
+if [[ -e "$PLUGIN" ]]; then
   installed=""
   for c in com.omnigroup.OmniFocus4 com.omnigroup.OmniFocus4.MacAppStore com.omnigroup.OmniFocus3; do
     d="$HOME/Library/Containers/$c/Data/Library/Application Support/Plug-Ins"
     if [[ -d "${d:h}" ]]; then
-      mkdir -p "$d" && cp "$PLUGIN" "$d/" && installed="$d"; break
+      mkdir -p "$d" && rm -rf "$d/Tempus.omnifocusjs" && cp -R "$PLUGIN" "$d/" && installed="$d"; break
     fi
   done
   if [[ -n "$installed" ]]; then

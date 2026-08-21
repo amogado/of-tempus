@@ -60,6 +60,12 @@ Your API token goes in the macOS Keychain, never in a file:
 security add-generic-password -a oftempus -s oftempus-token -w "YOUR_TOKEN" -U
 ```
 
+## iOS (and Mac) plug-in
+
+The daemon is macOS-only, but the repo also ships an [Omni Automation](https://omni-automation.com/) plug-in — `plugin/Tempus.omnifocusjs` — that works on **OmniFocus for iOS/iPadOS and Mac**: select a task, tap **Tempus** in the Automation menu to start the timer (any running entry is stopped first); tap again on the same task to stop it. Invoke it with **no selection** to enter your Tempus URL, workspace and token (stored in the plug-in's secure credentials, per device).
+
+Install: open the file on your device (AirDrop, iCloud Drive, download from this repo) — OmniFocus offers to install it. On the Mac you can also drop it into OmniFocus's `Plug-Ins` folder.
+
 ## Troubleshooting
 
 ```zsh

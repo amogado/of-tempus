@@ -8,14 +8,28 @@ CONF_DIR="$HOME/.config/oftempus"
 CONF="$CONF_DIR/config.json"
 mkdir -p "$CONF_DIR"
 
-cur_url=""; cur_ws=""
+# L'instance de référence. Elle sert UNIQUEMENT de dernier recours, sur une
+# machine encore vierge : sans elle, chaque nouvelle installation oblige à
+# retrouver l'adresse ailleurs, et c'est là qu'on saisit une ancienne URL.
+URL_REFERENCE="https://tempus.ephais.eu"
+
+cur_url=""; cur_ws=""; deja_configure=0
 if [[ -f "$CONF" ]]; then
+  deja_configure=1
   cur_url=$(jq -r '.tempus_base_url // ""' "$CONF" 2>/dev/null) || true
   cur_ws=$(jq -r '.workspace // ""' "$CONF" 2>/dev/null) || true
 fi
 
-printf "URL de l'instance Tempus%s : " "${cur_url:+ [$cur_url]}"
-read -r url; url=${url:-$cur_url}
+# Ce que la touche Entrée accepte, par ordre de priorité :
+#   1. la valeur déjà choisie SUR CETTE MACHINE — un défaut ne doit jamais
+#      déplacer une machine d'instance en silence ;
+#   2. TEMPUS_BASE_URL, pour qui déploie ou héberge sa propre instance ;
+#   3. l'instance de référence, à défaut de tout le reste.
+url_defaut=${cur_url:-${TEMPUS_BASE_URL-}}
+url_defaut=${url_defaut:-$URL_REFERENCE}
+
+printf "URL de l'instance Tempus [%s] : " "$url_defaut"
+read -r url; url=${url:-$url_defaut}
 [[ -n "$url" ]] || { echo "URL requise." >&2; exit 1; }
 
 printf "Nom du workspace%s : " "${cur_ws:+ [$cur_ws]}"
@@ -35,7 +49,35 @@ jq -n --arg u "${url%/}" --arg w "$ws" '{tempus_base_url: $u, workspace: $w}' > 
 TOKEN=$(security find-generic-password -s oftempus-token -w)
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -H "Authorization: Bearer ${TOKEN}" "${url%/}/api/v9/me" || echo 000)
 if [[ "$code" == "200" ]]; then
-  echo "✅ Connexion Tempus OK. Lance le suivi avec : brew services start of-tempus"
+  echo "✅ Connexion Tempus OK."
+  # Le daemon lit cette configuration UNE SEULE FOIS, à son démarrage. Tant
+  # qu'il n'est pas redémarré, il continue d'utiliser l'ancienne — sans rien
+  # signaler, et ce « OK » vert au-dessus n'y change rien. C'est le seul écart
+  # de toute la chaîne qui ne se voit nulle part : ni dans la config (juste),
+  # ni à l'écran (vert), seulement dans le trafic réel.
+  # NB : des `if` explicites, et non des `[[ … ]] && …` — sous `set -e`, une
+  # telle liste dont le test est faux renvoie 1 et ferait sortir le script ici,
+  # juste avant le message qui compte.
+  url_change=0; ws_change=0
+  if (( deja_configure )); then
+    if [[ "${url%/}" != "$cur_url" ]]; then url_change=1; fi
+    if [[ "$ws" != "$cur_ws" ]]; then ws_change=1; fi
+  fi
+  if (( url_change || ws_change )); then
+    echo
+    echo "⚠️  La configuration a changé :"
+    if (( url_change )); then echo "      URL       : ${cur_url:-(aucune)} → ${url%/}"; fi
+    if (( ws_change )); then echo "      workspace : ${cur_ws:-(aucun)} → $ws"; fi
+    echo
+    echo "    Le daemon garde l'ancienne valeur tant qu'il tourne, et « start » ne"
+    echo "    fait rien sur un service déjà lancé. Applique le changement avec :"
+    echo
+    echo "      brew services restart of-tempus"
+  elif (( deja_configure )); then
+    echo "   Configuration inchangée — rien à redémarrer."
+  else
+    echo "   Lance le suivi avec : brew services start of-tempus"
+  fi
 else
   echo "⚠️ Tempus a répondu HTTP $code — vérifie l'URL et le token." >&2; exit 1
 fi

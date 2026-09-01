@@ -54,6 +54,21 @@ Requires [jq](https://jqlang.github.io/jq/) (`brew install jq` — automatic wit
 }
 ```
 
+Pressing Enter at the URL prompt keeps the value already configured on this machine;
+on a fresh machine it falls back to `$TEMPUS_BASE_URL`, then to the reference instance.
+An existing value is never overwritten by a default.
+
+**A running daemon does not pick up a changed configuration.** It reads
+`tempus_base_url` once, at startup — so editing this file, or re-running
+`oftempus-setup`, leaves it talking to the old instance until you restart it:
+
+```zsh
+brew services restart of-tempus    # `start` does nothing on an already-running service
+```
+
+`oftempus-setup` detects the change and reminds you. Nothing else does: the config is
+correct, the setup prints a green OK, and only the actual traffic tells you otherwise.
+
 Your API token goes in the macOS Keychain, never in a file:
 
 ```zsh

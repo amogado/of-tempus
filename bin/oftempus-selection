@@ -1,0 +1,19 @@
+#!/bin/zsh
+# oftempus-selection — the task currently selected in personalfocus.
+#
+# Prints {"id","name","project","client"} or NONE. Replaces the AppleScript that
+# asked OmniFocus for its window selection: personalfocus reports it through pf,
+# whether the interface is the local one or the hosted one.
+set -u
+command -v pf >/dev/null || { echo "NONE"; exit 0; }
+OUT=$(pf selection 2>/dev/null) || { echo "NONE"; exit 0; }
+[[ -z "$OUT" || "$OUT" == "null" ]] && { echo "NONE"; exit 0; }
+echo "$OUT" | jq -c '
+  if . == null or (.id // "") == "" then "NONE"
+  else {
+    id: .id,
+    name: (.name // ""),
+    project: (.project // ""),
+    # client = the outermost folder, as the old script took the project parent
+    client: ((.where // "") | split(" › ") | if length > 1 then .[0] else "" end)
+  } end' 2>/dev/null || echo "NONE"

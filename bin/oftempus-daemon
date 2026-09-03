@@ -94,7 +94,7 @@ stop_entry() {
 trap 'stop_entry; exit 0' INT TERM
 
 while true; do
-  SEL=$(/usr/bin/osascript "$SCRIPT_DIR/oftempus-selection.applescript" 2>/dev/null) || SEL="NONE"
+  SEL=$("$SCRIPT_DIR/oftempus-selection" 2>/dev/null) || SEL="NONE"
   if [[ "$SEL" == "NONE" || -z "$SEL" ]]; then
     TASK=""
   else
